@@ -189,7 +189,7 @@ func (r *Runtime) pickTransition(ctx context.Context, machine *Machine, entity *
 	}
 
 	for _, transition := range transitions {
-		ok, err := evaluateGuard(ctx, transition.Guard, entity, cmd)
+		ok, err := evaluateGuard(ctx, transition, entity, cmd)
 		if err != nil {
 			return CompiledTransition{}, err
 		}
@@ -201,22 +201,31 @@ func (r *Runtime) pickTransition(ctx context.Context, machine *Machine, entity *
 	return CompiledTransition{}, ErrGuardRejected{State: entity.State, Event: cmd.Event}
 }
 
-func evaluateGuard(ctx context.Context, guard string, entity *StateEntity, cmd FireCommand) (bool, error) {
-	if guard == "" {
+func evaluateGuard(ctx context.Context, transition CompiledTransition, entity *StateEntity, cmd FireCommand) (bool, error) {
+	if transition.Guard == "" {
 		return true, nil
 	}
-	env := map[string]any{
-		"actor": map[string]any{
-			"id":   cmd.Actor.ID,
-			"role": cmd.Actor.Role,
-		},
-		"entity":  entity.Data,
-		"payload": cmd.Payload,
-		"meta":    cmd.Meta,
-		"event":   cmd.Event,
-		"state":   entity.State,
+	env := guardEnvPool.Get().(*guardEnv)
+	env.Actor.ID = cmd.Actor.ID
+	env.Actor.Role = cmd.Actor.Role
+	env.Entity = entity.Data
+	env.Payload = cmd.Payload
+	env.Meta = cmd.Meta
+	env.Event = cmd.Event
+	env.State = entity.State
+	defer func() {
+		*env = guardEnv{}
+		guardEnvPool.Put(env)
+	}()
+	program := transition.GuardCode
+	if program == nil {
+		var err error
+		program, err = expr.Compile(transition.Guard, expr.Env(guardEnv{}), expr.AsBool())
+		if err != nil {
+			return false, fmt.Errorf("compile guard: %w", err)
+		}
 	}
-	out, err := expr.Eval(guard, env)
+	out, err := expr.Run(program, env)
 	if err != nil {
 		return false, fmt.Errorf("evaluate guard: %w", err)
 	}
@@ -226,6 +235,26 @@ func evaluateGuard(ctx context.Context, guard string, entity *StateEntity, cmd F
 	}
 	_ = ctx
 	return ok, nil
+}
+
+type guardEnv struct {
+	Actor   guardActor     `expr:"actor"`
+	Entity  map[string]any `expr:"entity"`
+	Payload map[string]any `expr:"payload"`
+	Meta    map[string]any `expr:"meta"`
+	Event   string         `expr:"event"`
+	State   string         `expr:"state"`
+}
+
+type guardActor struct {
+	ID   string `expr:"id"`
+	Role string `expr:"role"`
+}
+
+var guardEnvPool = sync.Pool{
+	New: func() any {
+		return new(guardEnv)
+	},
 }
 
 func machineKey(name string, version string) string {

@@ -228,7 +228,7 @@ func (tx *memoryTx) InsertStateLog(_ context.Context, log StateLog) error {
 func (tx *memoryTx) TryGetIdempotency(_ context.Context, machine string, idempotencyKey string) (*IdempotencyResult, error) {
 	result, ok := tx.repo.idempotency[machine+":"+idempotencyKey]
 	if !ok {
-		return &IdempotencyResult{}, nil
+		return nil, nil
 	}
 	return &IdempotencyResult{Hit: true, Result: &result}, nil
 }

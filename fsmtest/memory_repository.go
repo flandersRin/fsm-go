@@ -10,17 +10,23 @@ import (
 
 type MemoryRepository struct {
 	mu           sync.Mutex
-	entities     map[string]*fsm.StateEntity
+	entities     map[entityKey]*fsm.StateEntity
 	logs         []fsm.StateLog
 	outbox       []fsm.OutboxMessage
-	idempotency  map[string]fsm.TransitionResult
+	idempotency  map[idempotencyKey]fsm.TransitionResult
 	nextOutboxID int64
 }
 
 func NewMemoryRepository() *MemoryRepository {
+	return NewMemoryRepositoryWithCapacity(0, 0, 0, 0)
+}
+
+func NewMemoryRepositoryWithCapacity(entityCapacity int, logCapacity int, outboxCapacity int, idempotencyCapacity int) *MemoryRepository {
 	return &MemoryRepository{
-		entities:    map[string]*fsm.StateEntity{},
-		idempotency: map[string]fsm.TransitionResult{},
+		entities:    make(map[entityKey]*fsm.StateEntity, entityCapacity),
+		logs:        make([]fsm.StateLog, 0, logCapacity),
+		outbox:      make([]fsm.OutboxMessage, 0, outboxCapacity),
+		idempotency: make(map[idempotencyKey]fsm.TransitionResult, idempotencyCapacity),
 	}
 }
 
@@ -46,13 +52,23 @@ type memoryTx struct {
 	repo *MemoryRepository
 }
 
+type entityKey struct {
+	machine  string
+	entityID string
+}
+
+type idempotencyKey struct {
+	machine string
+	key     string
+}
+
 func (tx *memoryTx) CreateEntity(_ context.Context, entity fsm.StateEntity) error {
-	tx.repo.entities[entity.Machine+":"+entity.EntityID] = new(entity)
+	tx.repo.entities[entityKey{machine: entity.Machine, entityID: entity.EntityID}] = new(entity)
 	return nil
 }
 
 func (tx *memoryTx) GetEntity(_ context.Context, machine string, entityID string) (*fsm.StateEntity, error) {
-	entity, ok := tx.repo.entities[machine+":"+entityID]
+	entity, ok := tx.repo.entities[entityKey{machine: machine, entityID: entityID}]
 	if !ok {
 		return nil, errors.New("entity not found")
 	}
@@ -60,7 +76,7 @@ func (tx *memoryTx) GetEntity(_ context.Context, machine string, entityID string
 }
 
 func (tx *memoryTx) UpdateStateCAS(_ context.Context, machine string, entityID string, fromState string, toState string, revision int64) (bool, error) {
-	entity := tx.repo.entities[machine+":"+entityID]
+	entity := tx.repo.entities[entityKey{machine: machine, entityID: entityID}]
 	if entity == nil || entity.State != fromState || entity.Revision != revision {
 		return false, nil
 	}
@@ -75,16 +91,20 @@ func (tx *memoryTx) InsertStateLog(_ context.Context, log fsm.StateLog) error {
 }
 
 func (tx *memoryTx) TryGetIdempotency(_ context.Context, machine string, idempotencyKey string) (*fsm.IdempotencyResult, error) {
-	result, ok := tx.repo.idempotency[machine+":"+idempotencyKey]
+	result, ok := tx.repo.idempotency[idempotencyKeyFor(machine, idempotencyKey)]
 	if !ok {
-		return &fsm.IdempotencyResult{}, nil
+		return nil, nil
 	}
 	return &fsm.IdempotencyResult{Hit: true, Result: &result}, nil
 }
 
 func (tx *memoryTx) SaveIdempotencyResult(_ context.Context, machine string, idempotencyKey string, _ string, _ string, result fsm.TransitionResult) error {
-	tx.repo.idempotency[machine+":"+idempotencyKey] = result
+	tx.repo.idempotency[idempotencyKeyFor(machine, idempotencyKey)] = result
 	return nil
+}
+
+func idempotencyKeyFor(machine string, key string) idempotencyKey {
+	return idempotencyKey{machine: machine, key: key}
 }
 
 func (tx *memoryTx) InsertOutbox(_ context.Context, msg fsm.OutboxMessage) error {

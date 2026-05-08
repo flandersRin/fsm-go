@@ -142,9 +142,9 @@ func (r *TxRepository) TryGetIdempotency(ctx context.Context, machine string, id
 SELECT result
 FROM fsm_idempotency
 WHERE machine = ? AND idempotency_key = ? AND status = 'DONE' AND deleted = 0
-`, machine, idempotencyKey).Scan(&raw)
+	`, machine, idempotencyKey).Scan(&raw)
 	if err == sql.ErrNoRows {
-		return &fsm.IdempotencyResult{Hit: false}, nil
+		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get idempotency: %w", err)

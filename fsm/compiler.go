@@ -3,6 +3,9 @@ package fsm
 import (
 	"fmt"
 	"sort"
+
+	"github.com/expr-lang/expr"
+	"github.com/expr-lang/expr/vm"
 )
 
 type Machine struct {
@@ -30,6 +33,7 @@ type CompiledTransition struct {
 	To         string
 	Priority   int
 	Guard      string
+	GuardCode  *vm.Program
 	Idempotent bool
 	Actions    ActionSpec
 }
@@ -55,7 +59,23 @@ func Compile(spec *MachineSpec) (*Machine, error) {
 		machine.Events[event.Name] = Event(event)
 	}
 	for _, transition := range spec.Transitions {
-		compiled := CompiledTransition(transition)
+		compiled := CompiledTransition{
+			Name:       transition.Name,
+			From:       transition.From,
+			Event:      transition.Event,
+			To:         transition.To,
+			Priority:   transition.Priority,
+			Guard:      transition.Guard,
+			Idempotent: transition.Idempotent,
+			Actions:    transition.Actions,
+		}
+		if transition.Guard != "" {
+			program, err := expr.Compile(transition.Guard, expr.Env(guardEnv{}), expr.AsBool())
+			if err != nil {
+				return nil, fmt.Errorf("compile guard %s: %w", transition.Name, err)
+			}
+			compiled.GuardCode = program
+		}
 		key := transitionKey(transition.From, transition.Event)
 		machine.Transitions[key] = append(machine.Transitions[key], compiled)
 	}
@@ -80,5 +100,5 @@ func (m *Machine) FindTransitions(state string, event string) ([]CompiledTransit
 }
 
 func transitionKey(state string, event string) string {
-	return fmt.Sprintf("%s:%s", state, event)
+	return state + ":" + event
 }

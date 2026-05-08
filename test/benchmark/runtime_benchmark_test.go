@@ -2,6 +2,7 @@ package benchmark_test
 
 import (
 	"context"
+	"runtime"
 	"strconv"
 	"testing"
 	"time"
@@ -26,22 +27,31 @@ func benchmarkRuntimeFire(b *testing.B, withObservability bool) {
 	b.ReportAllocs()
 	ctx := context.Background()
 
-	for n := 0; n < b.N; n++ {
-		runtime, commands := newBenchmarkRuntime(b, ctx, withObservability)
+	fsmRuntime, commands := newBenchmarkRuntime(b, ctx, withObservability)
 
-		b.StartTimer()
-		startedAt := time.Now()
-		for _, cmd := range commands {
-			if _, err := runtime.Fire(ctx, cmd); err != nil {
-				b.Fatal(err)
-			}
+	var before runtime.MemStats
+	var after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+
+	b.ResetTimer()
+	startedAt := time.Now()
+	for _, cmd := range commands {
+		if _, err := fsmRuntime.Fire(ctx, cmd); err != nil {
+			b.Fatal(err)
 		}
-		elapsed := time.Since(startedAt)
-		b.StopTimer()
-
-		b.ReportMetric(float64(benchmarkEntityCount)/elapsed.Seconds(), "transitions/s")
-		b.ReportMetric(float64(elapsed.Nanoseconds())/float64(benchmarkEntityCount), "ns/transition")
 	}
+	elapsed := time.Since(startedAt)
+	runtime.ReadMemStats(&after)
+
+	allocatedBytes := after.TotalAlloc - before.TotalAlloc
+	mallocs := after.Mallocs - before.Mallocs
+
+	b.ReportMetric(float64(benchmarkEntityCount)/elapsed.Seconds(), "transitions/s")
+	b.ReportMetric(float64(elapsed.Nanoseconds())/float64(benchmarkEntityCount), "ns/transition")
+	b.ReportMetric(float64(allocatedBytes)/1024/1024, "allocated_mb")
+	b.ReportMetric(float64(allocatedBytes)/float64(benchmarkEntityCount), "bytes/transition")
+	b.ReportMetric(float64(mallocs)/float64(benchmarkEntityCount), "allocs/transition")
 }
 
 func newBenchmarkRuntime(b *testing.B, ctx context.Context, withObservability bool) (*fsm.Runtime, []fsm.FireCommand) {
@@ -53,7 +63,7 @@ func newBenchmarkRuntime(b *testing.B, ctx context.Context, withObservability bo
 		b.Fatal(err)
 	}
 
-	repo := fsmtest.NewMemoryRepository()
+	repo := fsmtest.NewMemoryRepositoryWithCapacity(benchmarkEntityCount, benchmarkEntityCount, 0, benchmarkEntityCount)
 	opts := []fsm.RuntimeOption{}
 	if withObservability {
 		opts = append(opts, fsm.WithObserver(fsmprom.NewObserver()))
