@@ -1,6 +1,6 @@
 # 库接入示例
 
-A06 FSM Go 的核心定位是 Go library。业务系统直接在自己的服务里加载 DSL、注册状态机、接入 Repository，然后通过统一入口触发状态流转。
+FSM Go 的核心定位是 Go library。业务系统直接在自己的服务里加载 DSL、注册状态机、接入 Repository，然后通过统一入口触发状态流转。
 
 ## 1. 定义 DSL
 

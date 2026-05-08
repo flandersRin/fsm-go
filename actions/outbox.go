@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/flandersrin/a06-fsm-go/fsm"
+	"github.com/flandersrin/fsm-go/fsm"
 )
 
 func RegisterOutbox(registry *fsm.ActionRegistry, topicByName map[string]string) {

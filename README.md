@@ -1,9 +1,9 @@
-# A06 FSM Go
+# FSM Go
 
-[![CI](https://github.com/flandersrin/a06-fsm-go/actions/workflows/ci.yml/badge.svg)](https://github.com/flandersrin/a06-fsm-go/actions/workflows/ci.yml)
+[![CI](https://github.com/flandersrin/fsm-go/actions/workflows/ci.yml/badge.svg)](https://github.com/flandersrin/fsm-go/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-A06 FSM Go 是一个面向生产环境的 Go 状态机库。
+FSM Go 是一个面向生产环境的 Go 状态机库。
 
 它用 DSL 描述状态、事件和流转规则，通过统一入口完成状态变化，并提供 MySQL、状态日志、幂等和 Outbox 示例实现。
 
@@ -33,7 +33,7 @@ A06 FSM Go 是一个面向生产环境的 Go 状态机库。
 ## 安装
 
 ```bash
-go get github.com/flandersrin/a06-fsm-go
+go get github.com/flandersrin/fsm-go
 ```
 
 ## 快速开始

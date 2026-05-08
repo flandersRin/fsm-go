@@ -12,9 +12,9 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 
-	"github.com/flandersrin/a06-fsm-go/actions"
-	"github.com/flandersrin/a06-fsm-go/fsm"
-	mysqlrepo "github.com/flandersrin/a06-fsm-go/persistence/mysql"
+	"github.com/flandersrin/fsm-go/actions"
+	"github.com/flandersrin/fsm-go/fsm"
+	mysqlrepo "github.com/flandersrin/fsm-go/persistence/mysql"
 )
 
 func main() {

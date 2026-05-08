@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/flandersrin/a06-fsm-go/actions"
-	"github.com/flandersrin/a06-fsm-go/fsm"
-	"github.com/flandersrin/a06-fsm-go/fsmtest"
+	"github.com/flandersrin/fsm-go/actions"
+	"github.com/flandersrin/fsm-go/fsm"
+	"github.com/flandersrin/fsm-go/fsmtest"
 )
 
 func main() {

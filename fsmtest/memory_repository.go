@@ -5,7 +5,7 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/flandersrin/a06-fsm-go/fsm"
+	"github.com/flandersrin/fsm-go/fsm"
 )
 
 type MemoryRepository struct {

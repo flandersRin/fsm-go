@@ -1,4 +1,4 @@
-module github.com/flandersrin/a06-fsm-go
+module github.com/flandersrin/fsm-go
 
 go 1.26.2
 

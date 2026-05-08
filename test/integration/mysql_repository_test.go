@@ -15,9 +15,9 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 
-	"github.com/flandersrin/a06-fsm-go/actions"
-	"github.com/flandersrin/a06-fsm-go/fsm"
-	mysqlrepo "github.com/flandersrin/a06-fsm-go/persistence/mysql"
+	"github.com/flandersrin/fsm-go/actions"
+	"github.com/flandersrin/fsm-go/fsm"
+	mysqlrepo "github.com/flandersrin/fsm-go/persistence/mysql"
 )
 
 func TestMySQLRepositoryEndToEndWithRealDependencies(t *testing.T) {
