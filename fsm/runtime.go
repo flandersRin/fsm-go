@@ -14,32 +14,40 @@ type Actor struct {
 	Role string
 }
 
+// FireCommand 是一次状态流转请求。
+// Runtime 会根据 Machine、MachineVersion、EntityID 读取当前实体状态，
+// 用 Event 找到候选迁移规则，再用 Payload、Meta、Actor 等字段执行 guard 判断。
 type FireCommand struct {
-	Machine        string
-	MachineVersion string
-	EntityID       string
-	Event          string
-	Actor          Actor
-	RequestID      string
-	IdempotencyKey string
-	Payload        map[string]any
-	Meta           map[string]any
+	Machine        string         // 状态机名称。
+	MachineVersion string         // 状态机规则版本。
+	EntityID       string         // 业务实体 ID。
+	Event          string         // 本次触发的事件名称。
+	Actor          Actor          // 触发流转的操作者信息，可在 guard 和日志中使用。
+	RequestID      string         // 请求 ID，只用于记录和排查，不参与幂等判断。
+	IdempotencyKey string         // 幂等键。非空且迁移规则开启幂等时，成功结果会被保存。
+	Payload        map[string]any // 业务载荷，可在 guard、Action 和状态日志中使用。
+	Meta           map[string]any // 调用侧扩展信息，可在 guard 和 Action 中使用。
 }
 
+// TransitionResult 是一次流转的返回结果。
+// 普通成功会返回新的状态和版本号；命中幂等时会返回已保存的成功结果，并把 IdempotentHit 置为 true。
 type TransitionResult struct {
-	Machine        string    `json:"machine"`
-	MachineVersion string    `json:"machine_version"`
-	EntityID       string    `json:"entity_id"`
-	Event          string    `json:"event"`
-	FromState      string    `json:"from_state"`
-	ToState        string    `json:"to_state"`
-	TransitionName string    `json:"transition_name"`
-	Revision       int64     `json:"revision"`
-	Changed        bool      `json:"changed"`
-	IdempotentHit  bool      `json:"idempotent_hit"`
-	CreatedAt      time.Time `json:"created_at"`
+	Machine        string    `json:"machine"`         // 状态机名称。
+	MachineVersion string    `json:"machine_version"` // 状态机规则版本。
+	EntityID       string    `json:"entity_id"`       // 业务实体 ID。
+	Event          string    `json:"event"`           // 触发本次流转的事件。
+	FromState      string    `json:"from_state"`      // 流转前状态。
+	ToState        string    `json:"to_state"`        // 流转后状态。
+	TransitionName string    `json:"transition_name"` // 命中的迁移规则名称。
+	Revision       int64     `json:"revision"`        // 流转后的实体版本号。
+	Changed        bool      `json:"changed"`         // 是否发生状态变化。当前成功流转恒为 true。
+	IdempotentHit  bool      `json:"idempotent_hit"`  // 是否直接返回了已保存的幂等结果。
+	CreatedAt      time.Time `json:"created_at"`      // 流转结果创建时间。
 }
 
+// Runtime 是状态流转的统一入口。
+// 一次 Fire 会在 Repository 事务中完成幂等检查、实体读取、迁移匹配、guard 判断、
+// 事务内 Action、CAS 状态更新、状态日志写入和幂等结果保存。
 type Runtime struct {
 	repo      Repository
 	actions   *ActionRegistry
@@ -49,6 +57,7 @@ type Runtime struct {
 	machines map[string]*Machine
 }
 
+// NewRuntime 创建 Runtime。actions 为空时会自动使用空 ActionRegistry。
 func NewRuntime(repo Repository, actions *ActionRegistry, opts ...RuntimeOption) *Runtime {
 	if actions == nil {
 		actions = NewActionRegistry()
@@ -64,12 +73,15 @@ func NewRuntime(repo Repository, actions *ActionRegistry, opts ...RuntimeOption)
 	return runtime
 }
 
+// RegisterMachine 注册编译后的状态机规则。
+// 同名不同版本会作为不同规则保存。
 func (r *Runtime) RegisterMachine(machine *Machine) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.machines[machineKey(machine.Name, machine.Version)] = machine
 }
 
+// GetMachine 按名称和版本读取已注册的状态机规则。
 func (r *Runtime) GetMachine(name string, version string) (*Machine, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -80,19 +92,29 @@ func (r *Runtime) GetMachine(name string, version string) (*Machine, error) {
 	return machine, nil
 }
 
+// CreateEntity 创建一条状态实体记录。
+// 调用方需要传入 Machine、MachineVersion、EntityID 和初始 State。
 func (r *Runtime) CreateEntity(ctx context.Context, entity StateEntity) error {
 	return r.repo.WithTx(ctx, func(ctx context.Context, tx TxRepository) error {
 		return tx.CreateEntity(ctx, entity)
 	})
 }
 
-func (r *Runtime) Fire(ctx context.Context, cmd FireCommand) (result *TransitionResult, err error) {
+// Fire 触发一次状态流转。
+// 若配置了 Observer，会在流转开始和结束时分别发送事件；没有 Observer 时会跳过观测事件构造。
+func (r *Runtime) Fire(ctx context.Context, cmd FireCommand) (*TransitionResult, error) {
+	if len(r.observers) == 0 {
+		return r.fire(ctx, cmd)
+	}
+
 	startedAt := time.Now()
 	r.observeTransitionStarted(ctx, cmd)
-	defer func() {
-		r.observeTransitionCompleted(ctx, cmd, result, err, time.Since(startedAt))
-	}()
+	result, err := r.fire(ctx, cmd)
+	r.observeTransitionCompleted(ctx, cmd, result, err, time.Since(startedAt))
+	return result, err
+}
 
+func (r *Runtime) fire(ctx context.Context, cmd FireCommand) (result *TransitionResult, err error) {
 	machine, err := r.GetMachine(cmd.Machine, cmd.MachineVersion)
 	if err != nil {
 		return nil, err

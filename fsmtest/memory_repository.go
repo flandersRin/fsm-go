@@ -8,6 +8,8 @@ import (
 	"github.com/flandersrin/fsm-go/fsm"
 )
 
+// MemoryRepository 是面向测试、示例和 benchmark 的内存 Repository。
+// 它用互斥锁模拟事务边界，适合本地验证状态流转行为；不要直接作为生产存储使用。
 type MemoryRepository struct {
 	mu           sync.Mutex
 	entities     map[entityKey]*fsm.StateEntity
@@ -15,37 +17,46 @@ type MemoryRepository struct {
 	outbox       []fsm.OutboxMessage
 	idempotency  map[idempotencyKey]fsm.TransitionResult
 	nextOutboxID int64
+	tx           memoryTx
 }
 
+// NewMemoryRepository 创建不预设容量的内存 Repository。
 func NewMemoryRepository() *MemoryRepository {
 	return NewMemoryRepositoryWithCapacity(0, 0, 0, 0)
 }
 
+// NewMemoryRepositoryWithCapacity 创建可预设容量的内存 Repository。
+// benchmark 可以通过预留实体、日志、Outbox 和幂等结果容量，减少 slice 或 map 扩容带来的噪声。
 func NewMemoryRepositoryWithCapacity(entityCapacity int, logCapacity int, outboxCapacity int, idempotencyCapacity int) *MemoryRepository {
-	return &MemoryRepository{
+	repo := &MemoryRepository{
 		entities:    make(map[entityKey]*fsm.StateEntity, entityCapacity),
 		logs:        make([]fsm.StateLog, 0, logCapacity),
 		outbox:      make([]fsm.OutboxMessage, 0, outboxCapacity),
 		idempotency: make(map[idempotencyKey]fsm.TransitionResult, idempotencyCapacity),
 	}
+	repo.tx.repo = repo
+	return repo
 }
 
+// Logs 返回状态日志副本。
 func (r *MemoryRepository) Logs() []fsm.StateLog {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return append([]fsm.StateLog(nil), r.logs...)
 }
 
+// Outbox 返回 Outbox 消息副本。
 func (r *MemoryRepository) Outbox() []fsm.OutboxMessage {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return append([]fsm.OutboxMessage(nil), r.outbox...)
 }
 
+// WithTx 在互斥锁保护下执行事务函数。
 func (r *MemoryRepository) WithTx(ctx context.Context, fn func(context.Context, fsm.TxRepository) error) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return fn(ctx, &memoryTx{repo: r})
+	return fn(ctx, &r.tx)
 }
 
 type memoryTx struct {

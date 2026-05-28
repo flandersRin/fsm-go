@@ -51,10 +51,10 @@ go run github.com/go-task/task/v3/cmd/task@v3.50.0 test:benchmark
 
 | 场景 | 总耗时 | 单次流转耗时 | 吞吐 | 内存分配 |
 |---|---:|---:|---:|---:|
-| 不开启可观测性 | 109.5 ms | 1,095 ns | 912,859 transitions/s | 83.92 MB |
-| 开启 Prometheus 可观测性 | 157.4 ms | 1,574 ns | 635,508 transitions/s | 83.93 MB |
+| 不开启可观测性 | 99.4 ms | 994 ns | 1,006,339 transitions/s | 83.16 MB |
+| 开启 Prometheus 可观测性 | 152.7 ms | 1,527 ns | 654,678 transitions/s | 83.17 MB |
 
-这次结果里，开启 Prometheus 可观测性后，单次流转耗时约增加 43.7%。这个开销主要来自指标计数、标签写入和耗时统计。即使开启可观测性，10 万次流转仍在 0.2 秒以内。
+这次结果里，开启 Prometheus 可观测性后，单次流转耗时约增加 53.7%。这个开销主要来自指标计数、标签写入和耗时统计。即使开启可观测性，10 万次流转仍在 0.2 秒以内。
 
 ## 分配来源
 
@@ -71,6 +71,8 @@ go run github.com/go-task/task/v3/cmd/task@v3.50.0 test:benchmark
 - 测试用内存 Repository 改为结构化 key。
 - Benchmark 预置数据阶段和流转阶段分开统计。
 - Benchmark 为 100,000 条日志和幂等结果预留容量，避免扩容影响结果。
+- Runtime 在没有 Observer 时跳过观测事件构造。
+- 测试用内存 Repository 复用事务对象，减少每次流转的临时分配。
 
 ## 使用建议
 
