@@ -2,16 +2,15 @@ version: '3'
 
 tasks:
   check:
-    desc: Run all local checks
+    desc: Run local verification
     cmds:
       - task: fmt:check
       - task: tidy:check
       - task: vet
-      - task: lint
       - task: test
       - task: test:race
-      - task: test:integration
       - task: test:benchmark
+      - task: perf
 
   test:
     desc: Run unit tests
@@ -19,24 +18,24 @@ tasks:
       - go test ./...
 
   test:race:
-    desc: Run tests with race detector
+    desc: Run race detector
     cmds:
       - go test -race ./...
 
-  test:integration:
-    desc: Run integration tests with Testcontainers
-    cmds:
-      - go test -count=1 -tags=integration ./test/integration/...
-
   test:benchmark:
-    desc: Run 100K transition benchmark once
+    desc: Run benchmark once
     cmds:
-      - go test -run '^$' -bench BenchmarkRuntimeFire100K -benchtime=1x -benchmem ./test/benchmark
+      - go test -run '^$' -bench BenchmarkMemoryRuntimeStartAndRun -benchtime=1x -benchmem ./test/benchmark
 
-  lint:
-    desc: Run golangci-lint
+  perf:
+    desc: Run business performance script
     cmds:
-      - golangci-lint run ./...
+      - go run ./scripts/perf --n 20000
+
+  data:
+    desc: Generate sample business data
+    cmds:
+      - go run ./scripts/generate-business-data --kind order --count 1000 --out business-data.jsonl
 
   vet:
     desc: Run go vet
@@ -54,16 +53,6 @@ tasks:
         diff -u "$tmp/go.sum" go.sum
 
   fmt:check:
-    desc: Check formatting
+    desc: Check gofmt
     cmds:
       - test -z "$(gofmt -l .)"
-
-  demo:up:
-    desc: Start demo service and dependencies
-    cmds:
-      - docker compose up -d --build
-
-  demo:down:
-    desc: Stop demo service and dependencies
-    cmds:
-      - docker compose down -v

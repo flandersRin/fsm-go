@@ -1,63 +1,33 @@
 # 架构说明
 
-## 目标
+workflow-go 分为四层。
 
-FSM Go 不是简单的状态枚举工具，而是一个状态治理库。
+## 核心运行时
 
-目标是把业务对象状态变化从分散的业务代码里收口出来，统一处理：
+`workflow` 包只包含流程模型、编译、运行时、任务接口、存储接口和消息接口。
 
-- 状态迁移规则。
-- 非法流转拒绝。
-- Guard 条件判断。
-- 并发控制。
-- 幂等。
-- 状态日志。
-- Outbox 一致性。
+核心包不依赖 MySQL、PostgreSQL、Kafka，也不依赖任何业务系统。
 
-## 核心链路
+## 持久化实现
 
-```text
-业务服务
-  -> Runtime.Fire
-  -> Machine Registry
-  -> Compiled DSL
-  -> Guard Engine
-  -> Repository Transaction
-      -> CAS 更新状态
-      -> 写状态日志
-      -> 写 Outbox
-      -> 保存幂等结果
-```
+默认提供：
 
-## 模块职责
+- `persistence/mysql`
+- `persistence/postgres`
+- `workflowtest`
 
-| 模块 | 职责 |
-|---|---|
-| `fsm` | 核心状态机、DSL、Runtime、Repository 接口 |
-| `actions` | 可复用 Action |
-| `persistence/mysql` | MySQL Repository 实现 |
-| `fsmtest` | 测试和示例使用的内存 Repository |
-| `observability/prometheus` | Prometheus 指标实现 |
-| `cmd/fsm-demo` | 可运行 demo 服务 |
-| `test/integration` | Testcontainers 集成测试 |
+MySQL 和 PostgreSQL 用于生产接入。`workflowtest` 只用于测试和示例。
 
-## 内置示例
+## 消息实现
 
-| 示例 | DSL | 说明 |
-|---|---|---|
-| `examples/order` | `configs/order.v1.yaml` | 订单支付、发货、完成、取消 |
-| `examples/kafka_message` | `configs/kafka-message.v1.yaml` | Kafka 消费、失败重试、死信 |
-| `examples/agent_run` | `configs/agent-run.v1.yaml` | Agent 规划、运行、工具等待、完成 |
+默认提供：
 
-## 存储边界
+- `messaging/kafka`
 
-核心库只依赖 Repository 接口，不强制绑定 MySQL。
+Kafka 通过通用消息接口接入。用户可以按同样接口接入 RabbitMQ、NATS、Redis Stream 或云消息队列。
 
-默认 MySQL 实现提供四张表：
+## 示例和脚本
 
-- `fsm_entity`
-- `fsm_state_log`
-- `fsm_idempotency`
-- `fsm_outbox`
+示例覆盖订单、异步任务、Saga 和 Agent Workflow。
 
-默认表结构不包含 `tenant_id` 和 `sub_tenant_id`。如果业务需要租户隔离，应通过自定义 Repository 或插件实现。
+脚本覆盖业务数据生成和性能测试。

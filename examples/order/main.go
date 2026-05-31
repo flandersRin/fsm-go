@@ -3,67 +3,53 @@ package main
 import (
 	"context"
 	"fmt"
-	"log/slog"
-	"os"
+	"log"
+	"time"
 
-	"github.com/flandersrin/fsm-go/actions"
-	"github.com/flandersrin/fsm-go/fsm"
-	"github.com/flandersrin/fsm-go/fsmtest"
+	"github.com/flandersrin/workflow-go/workflow"
+	"github.com/flandersrin/workflow-go/workflowtest"
 )
 
 func main() {
 	ctx := context.Background()
-
-	spec, err := fsm.LoadYAML("configs/order.v1.yaml")
+	store := workflowtest.NewMemoryStore()
+	runtime := workflow.NewRuntime(store)
+	machine, err := workflow.Compile(definition())
 	if err != nil {
-		slog.Error("load dsl", "error", err)
-		os.Exit(1)
+		log.Fatal(err)
 	}
-	machine, err := fsm.Compile(spec)
-	if err != nil {
-		slog.Error("compile dsl", "error", err)
-		os.Exit(1)
-	}
-
-	repo := fsmtest.NewMemoryRepository()
-	registry := fsm.NewActionRegistry()
-	actions.RegisterOutbox(registry, map[string]string{
-		"outbox.order_paid": "order.paid",
-	})
-
-	runtime := fsm.NewRuntime(repo, registry)
 	runtime.RegisterMachine(machine)
-
-	err = runtime.CreateEntity(ctx, fsm.StateEntity{
-		Machine:        "order",
-		MachineVersion: "v1",
-		EntityID:       "order-example-1",
-		State:          "PENDING",
-		Data:           map[string]any{},
-	})
+	runtime.RegisterTask("payment.charge", workflow.TaskHandlerFunc(func(context.Context, workflow.TaskContext) (workflow.TaskResult, error) {
+		return workflow.TaskResult{Event: "PAYMENT_OK", Output: map[string]any{"paid_at": time.Now().UTC().Format(time.RFC3339)}}, nil
+	}))
+	instance, err := runtime.StartWorkflow(ctx, workflow.StartOptions{Workflow: "order", Version: "v1", InstanceID: "order-demo-1", Data: map[string]any{"amount": 100}})
 	if err != nil {
-		slog.Error("create entity", "error", err)
-		os.Exit(1)
+		log.Fatal(err)
 	}
-
-	result, err := runtime.Fire(ctx, fsm.FireCommand{
-		Machine:        "order",
-		MachineVersion: "v1",
-		EntityID:       "order-example-1",
-		Event:          "PAY_SUCCESS",
-		Actor:          fsm.Actor{ID: "user-1", Role: "customer"},
-		RequestID:      "request-example-1",
-		IdempotencyKey: "payment-example-1",
-		Payload: map[string]any{
-			"paymentStatus": "SUCCESS",
-			"amount":        100,
-		},
-	})
+	report, err := runtime.RunDueTasks(ctx, workflow.RunOptions{Limit: 10})
 	if err != nil {
-		slog.Error("fire transition", "error", err)
-		os.Exit(1)
+		log.Fatal(err)
 	}
+	current, err := runtime.GetWorkflow(ctx, instance.ID)
+	if err != nil {
+		log.Fatal(err)
+	}
+	history, err := runtime.ListHistory(ctx, instance.ID)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("state=%s status=%s tasks=%+v history=%d\n", current.State, current.Status, report, len(history))
+}
 
-	fmt.Printf("%s -> %s\n", result.FromState, result.ToState)
-	fmt.Printf("logs=%d outbox=%d\n", len(repo.Logs()), len(repo.Outbox()))
+func definition() *workflow.WorkflowDefinition {
+	return &workflow.WorkflowDefinition{
+		Name: "order", Version: "v1", Initial: "PENDING",
+		States: []workflow.StateDefinition{{Name: "PENDING", OnEnter: []string{"charge_payment"}}, {Name: "PAID", Terminal: true}},
+		Events: []workflow.EventDefinition{{Name: "PAYMENT_OK"}},
+		Tasks: []workflow.TaskDefinition{{
+			Name: "charge_payment", Handler: "payment.charge",
+			Retry: workflow.RetryPolicy{MaxAttempts: 3, Backoff: time.Second},
+		}},
+		Transitions: []workflow.Transition{{Name: "payment_ok", From: "PENDING", Event: "PAYMENT_OK", To: "PAID"}},
+	}
 }

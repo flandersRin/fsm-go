@@ -25,4 +25,5 @@ jobs:
         with:
           version: latest
       - run: go test -count=1 -tags=integration ./test/integration/...
-      - run: go test -run '^$' -bench BenchmarkRuntimeFire100K -benchtime=1x -benchmem ./test/benchmark
+      - run: go test -run '^$' -bench BenchmarkMemoryRuntimeStartAndRun -benchtime=1x -benchmem ./test/benchmark
+      - run: go run ./scripts/perf --n 20000

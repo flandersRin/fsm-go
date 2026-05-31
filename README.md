@@ -1,249 +1,79 @@
-# FSM Go
+# workflow-go
 
-[![CI](https://github.com/flandersrin/fsm-go/actions/workflows/ci.yml/badge.svg)](https://github.com/flandersrin/fsm-go/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+workflow-go 是一个面向复杂业务流程编排的 Go 工作流运行时。
 
-FSM Go 是一个面向生产环境的 Go 状态机库。
+它不是传统 FSM 库。传统 FSM 主要解决“某个状态能不能切到另一个状态”，workflow-go 解决的是“一个长期运行的业务流程如何执行、失败、重试、补偿、恢复和被观察”。
 
-它用 DSL 描述状态、事件和流转规则，通过统一入口完成状态变化，并提供 MySQL、状态日志、幂等和 Outbox 示例实现。
+## GSM 定位
 
-English documentation: [README.en.md](README.en.md)
+### Goal
 
-## 适用场景
+用状态机作为核心抽象，解决复杂业务流程编排问题。
 
-- 订单状态流转。
-- 审批流。
-- Kafka 消费状态治理。
+### Strategy
+
+- 状态只表达流程位置。
+- 任务负责真正执行业务动作。
+- 执行历史成为一等数据。
+- 持久化和消息都通过接口接入。
+- 重试、超时、补偿、恢复由运行时统一处理。
+
+### Mechanism
+
+- `WorkflowDefinition` 描述流程。
+- `WorkflowInstance` 保存当前快照。
+- `TaskExecution` 记录可恢复任务。
+- `ExecutionHistory` 提供完整时间线。
+- `Store` 抽象持久化。
+- `MessagePublisher` / `MessageConsumer` 抽象消息系统。
+- 默认提供 MySQL、PostgreSQL、Kafka 实现。
+
+## 适合场景
+
+- 订单流程。
+- 审批流程。
+- Saga 编排。
 - 异步任务恢复。
-- Saga 流程。
+- Kafka 消费治理。
 - AI Agent Workflow。
 
-## 核心能力
-
-- YAML DSL 定义状态机。
-- Guard 条件判断。
-- 统一 `Fire` 入口。
-- Repository 接口隔离存储实现。
-- 默认 MySQL Repository。
-- CAS 并发控制。
-- 状态迁移日志。
-- 幂等请求复用历史结果。
-- Outbox 事务写入。
-- Prometheus 指标。
-- Grafana 仪表盘。
-- Docker Compose demo。
-- Testcontainers 集成测试。
-
-## 安装
-
-```bash
-go get github.com/flandersrin/fsm-go
-```
-
-## 快速开始
-
-运行单元测试：
+## 快速运行
 
 ```bash
 go test ./...
-go test -race ./...
-```
-
-运行 Go 示例：
-
-```bash
 go run ./examples/order
-go run ./examples/kafka_message
-go run ./examples/agent_run
+go run ./examples/async_task
+go run ./examples/saga
+go run ./examples/agent_workflow
 ```
 
-订单示例预期输出类似：
-
-```text
-PENDING -> PAID
-logs=1 outbox=1
-```
-
-更多说明见 [快速开始](docs/quickstart.md)。
-
-## 作为库使用
-
-加载 DSL：
-
-```go
-spec, err := fsm.LoadYAML("configs/order.v1.yaml")
-if err != nil {
-    return err
-}
-
-machine, err := fsm.Compile(spec)
-if err != nil {
-    return err
-}
-```
-
-注册运行时：
-
-```go
-runtime := fsm.NewRuntime(repository, actionRegistry)
-runtime.RegisterMachine(machine)
-```
-
-触发状态流转：
-
-```go
-result, err := runtime.Fire(ctx, fsm.FireCommand{
-    Machine:        "order",
-    MachineVersion: "v1",
-    EntityID:       "order-10001",
-    Event:          "PAY_SUCCESS",
-    Actor:          fsm.Actor{ID: "user-1", Role: "customer"},
-    RequestID:      "req-1",
-    IdempotencyKey: "pay-10001",
-    Payload: map[string]any{
-        "paymentStatus": "SUCCESS",
-        "amount":        100,
-    },
-})
-```
-
-完整接入说明见 [库接入示例](docs/library-usage.md)。
-
-## Docker Demo
-
-启动 demo 服务和 MySQL：
+生成业务数据：
 
 ```bash
-docker compose up -d --build
+go run ./scripts/generate-business-data --kind order --count 10000 --out order.jsonl
 ```
 
-初始化订单：
+运行内存性能测试：
 
 ```bash
-curl -X POST http://127.0.0.1:8080/demo/order/init \
-  -H 'Content-Type: application/json' \
-  -d '{"entity_id":"order-10001","data":{}}'
+go run ./scripts/perf --n 20000
 ```
 
-触发支付成功：
+## 核心入口
 
-```bash
-curl -X POST http://127.0.0.1:8080/demo/order/fire \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "entity_id":"order-10001",
-    "event":"PAY_SUCCESS",
-    "actor_id":"user-1",
-    "actor_role":"customer",
-    "request_id":"req-1",
-    "idempotency_key":"pay-10001",
-    "payload":{"paymentStatus":"SUCCESS","amount":100}
-  }'
-```
+- `StartWorkflow`：启动流程。
+- `SignalWorkflow`：发送事件。
+- `RunDueTasks`：执行到期、重试、超时任务。
+- `GetWorkflow`：读取当前状态。
+- `ListHistory`：读取执行时间线。
 
-查看状态、日志和 Outbox：
+## 文档
 
-```bash
-curl http://127.0.0.1:8080/demo/order/order-10001
-curl http://127.0.0.1:8080/demo/order/order-10001/logs
-curl http://127.0.0.1:8080/demo/outbox
-```
-
-清理环境：
-
-```bash
-docker compose down -v
-```
-
-更多说明见 [Docker Demo](docs/docker-demo.md)。
-
-## 可观测性
-
-demo 服务暴露 Prometheus 指标：
-
-```bash
-curl http://127.0.0.1:8080/metrics
-```
-
-Docker Compose 会同时启动 Prometheus 和 Grafana：
-
-```text
-Prometheus: http://127.0.0.1:9090
-Grafana:    http://127.0.0.1:3000
-```
-
-Grafana 默认账号是 `admin / admin`，内置仪表盘会自动加载。
-
-更多说明见 [可观测性](docs/observability.md)。
-
-## Docker Package
-
-发布版本会把 demo 镜像推送到 GitHub Container Registry：
-
-```text
-ghcr.io/flandersrin/fsm-go
-```
-
-拉取示例：
-
-```bash
-docker pull ghcr.io/flandersrin/fsm-go:v0.1.0
-```
-
-## 测试
-
-```bash
-go test ./...
-go test -race ./...
-go test -count=1 -tags=integration ./test/integration/...
-go test -run '^$' -bench BenchmarkRuntimeFire100K -benchtime=1x -benchmem ./test/benchmark
-```
-
-集成测试使用 Testcontainers 启动真实 MySQL。
-
-如果已安装 Taskfile：
-
-```bash
-task check
-task test:integration
-```
-
-如果不想全局安装 Taskfile，也可以直接运行：
-
-```bash
-go run github.com/go-task/task/v3/cmd/task@v3.50.0 check
-```
-
-更多说明见 [测试说明](docs/testing.md) 和 [Benchmark](docs/benchmark.md)。
-
-## 项目结构
-
-```text
-fsm/                  核心状态机库
-actions/              可复用 Action
-persistence/mysql/    MySQL Repository
-fsmtest/              测试和示例用内存 Repository
-observability/        Prometheus 和 Grafana 配置
-configs/              示例 DSL
-examples/order/       订单状态机示例
-examples/kafka_message/ Kafka 消费状态机示例
-examples/agent_run/   Agent Run 状态机示例
-cmd/fsm-demo/         可运行 demo 服务
-test/integration/     Testcontainers 集成测试
-test/benchmark/       10 万级状态流转 Benchmark
-docs/                 使用和架构文档
-```
-
-更多说明见 [架构说明](docs/architecture.md)。
-
-## 贡献
-
-欢迎提交 issue 和 pull request。提交前请阅读 [贡献指南](CONTRIBUTING.md)。
-
-贡献者列表见 [CONTRIBUTORS.md](CONTRIBUTORS.md)。
-
-安全问题请参考 [安全说明](SECURITY.md)。
-
-## 许可证
-
-本项目使用 [MIT License](LICENSE)。
+- [GSM](docs/gsm.md)
+- [架构说明](docs/architecture.md)
+- [执行模型](docs/execution-model.md)
+- [持久化](docs/persistence.md)
+- [消息](docs/messaging.md)
+- [恢复机制](docs/recovery.md)
+- [可观测性](docs/observability.md)
+- [性能测试](docs/performance.md)
