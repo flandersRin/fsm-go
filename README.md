@@ -47,6 +47,14 @@ go run ./examples/saga
 go run ./examples/agent_workflow
 ```
 
+业务接入推荐使用生成器：
+
+```bash
+go generate ./...
+```
+
+生成后业务只需要注册流程、注册任务、启动流程。详细说明见 [业务接入说明](docs/business-integration.md)。
+
 生成业务数据：
 
 ```bash
@@ -72,6 +80,7 @@ go run ./scripts/perf --n 20000
 - [GSM](docs/gsm.md)
 - [架构说明](docs/architecture.md)
 - [执行模型](docs/execution-model.md)
+- [业务接入说明](docs/business-integration.md)
 - [持久化](docs/persistence.md)
 - [消息](docs/messaging.md)
 - [恢复机制](docs/recovery.md)

@@ -56,6 +56,18 @@ type WorkflowDefinition struct {
 	Transitions []Transition      `yaml:"transitions"`
 }
 
+// StateName 是类型化状态名。业务侧可以通过生成代码得到常量，避免到处手写字符串。
+type StateName string
+
+// EventName 是类型化事件名。它让状态转移、Signal 调用和任务返回使用同一组常量。
+type EventName string
+
+// TaskName 是类型化任务名。状态入口和补偿任务都应引用这个类型。
+type TaskName string
+
+// HandlerName 是类型化处理器名。运行时注册和任务定义使用同一组常量。
+type HandlerName string
+
 // StateDefinition 描述流程中的稳定状态。OnEnter 只负责调度任务，不直接执行业务代码。
 type StateDefinition struct {
 	Name     string   `yaml:"name"`

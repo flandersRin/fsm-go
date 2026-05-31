@@ -93,6 +93,16 @@ func Compile(def *WorkflowDefinition) (*Machine, error) {
 				return nil, ErrInvalidDefinition{Message: fmt.Sprintf("task %s references unknown compensation %s", task.Name, task.Compensation)}
 			}
 		}
+		if task.OnSuccess != "" {
+			if _, ok := m.Events[task.OnSuccess]; !ok {
+				return nil, ErrInvalidDefinition{Message: fmt.Sprintf("task %s references unknown success event %s", task.Name, task.OnSuccess)}
+			}
+		}
+		if task.OnFailure != "" {
+			if _, ok := m.Events[task.OnFailure]; !ok {
+				return nil, ErrInvalidDefinition{Message: fmt.Sprintf("task %s references unknown failure event %s", task.Name, task.OnFailure)}
+			}
+		}
 	}
 	for _, transition := range def.Transitions {
 		if transition.Name == "" || transition.From == "" || transition.Event == "" || transition.To == "" {

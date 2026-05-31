@@ -1,0 +1,35 @@
+package: main
+workflow: order
+version: v1
+initial: PENDING
+
+states:
+  - name: PENDING
+    on_enter:
+      - charge_payment
+  - name: PAID
+    terminal: true
+  - name: FAILED
+    terminal: true
+
+events:
+  - name: PAYMENT_OK
+  - name: PAYMENT_FAILED
+
+tasks:
+  - name: charge_payment
+    handler: payment.charge
+    max_attempts: 3
+    backoff: 1s
+    on_success: PAYMENT_OK
+    on_failure: PAYMENT_FAILED
+
+transitions:
+  - name: payment_ok
+    from: PENDING
+    event: PAYMENT_OK
+    to: PAID
+  - name: payment_failed
+    from: PENDING
+    event: PAYMENT_FAILED
+    to: FAILED
